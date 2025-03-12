@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub struct Database {
-    _autodrop: NetworkAutoStop,
+    _autodrop: Option<NetworkAutoStop>,
     tenant: Tenant,
     fdb: foundationdb::Database,
 }
@@ -63,9 +63,13 @@ impl Database {
         Ok(value)
     }
     ///Boot foundationdb and create a database
-    pub async fn new(tenant: Tenant) -> SResult<Self> {
+    pub async fn new(tenant: Tenant, primary: bool) -> SResult<Self> {
         let db = Database {
-            _autodrop: unsafe { foundationdb::boot() },
+            _autodrop: if primary {
+                Some(unsafe { foundationdb::boot() })
+            } else {
+                None
+            },
             tenant,
             fdb: foundationdb::Database::default()?,
         };
@@ -77,8 +81,8 @@ impl Database {
     ///     let db = Database::new(database::key::Tenant::Named("testing")).await.unwrap();
     ///     let id = Uuid::new_v4();
     ///     let person = Person {
-    ///         name: String::from("NameNameNameNameNamevName"),
-    ///         password: String::from("TestTestTestTestTest"),
+    ///         name: String::from("Name"),
+    ///         password: String::from("very_secure_password"),
     ///     };
     ///
     ///     db.transact(|transaction| {
