@@ -24,12 +24,21 @@ mod tests {
     #[tokio::test]
     async fn insert() -> SResult<()> {
         let _guard = unsafe { foundationdb::boot() };
-        let db = Database::new("testing").await?;
+        let db = Database::new(database::key::Tenant::Named("testing")).await?;
         let id = Uuid::new_v4();
         let person = Person {
             name: String::from("NameNameNameNameNamevName"),
             password: String::from("TestTestTestTestTest"),
         };
+
+        db.transact(|transaction| {
+            let person = &person;
+            async move {
+                transaction.put_value(person, id).await?;
+                Ok(())
+            }
+        })
+        .await?;
 
         db.transact(|transaction| async move {
             let eq = Person::name_index(Uuid::nil(), &String::from("NameNameNameNameNamevName"));
@@ -41,14 +50,6 @@ mod tests {
 
             println!("{result:#?}");
             Ok(())
-        })
-        .await?;
-        db.transact(|transaction| {
-            let person = &person;
-            async move {
-                transaction.put_value(person, id).await?;
-                Ok(())
-            }
         })
         .await?;
         db.transact(|transaction| async move {

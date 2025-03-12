@@ -7,12 +7,13 @@ use super::values_indices::IndexableValue;
 static MAGIC_NUMBER: u8 = 99;
 
 pub struct Key {
-    tenant: Tenant,
-    table: &'static str,
-    purpose: Purpose,
-    row: Uuid,
+    pub(super) tenant: Tenant,
+    pub(super) table: &'static str,
+    pub(super) purpose: Purpose,
+    pub(super) row: Uuid,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Tenant {
     Named(&'static str),
     Id(Uuid),

@@ -1,24 +1,119 @@
 use foundationdb::{FdbBindingError, RangeOption, options::StreamingMode};
 use uuid::Uuid;
 
-use crate::database::record::{IndexAddress, RecordStruct};
+use crate::{
+    database::{key::Purpose, record::RecordStruct},
+    error::{ExothermError, SResult},
+};
+
+use super::key::{Key, Tenant};
 
 #[allow(dead_code)]
 pub struct STransaction {
     pub(super) trx: foundationdb::RetryableTransaction,
     pub maybe_commited: bool,
-    pub(super) tenant: &'static str,
+    pub(super) tenant: Tenant,
 }
 #[allow(dead_code)]
 pub enum Query {
-    Equal(IndexAddress),
-    Between(IndexAddress, IndexAddress),
-    Gt(IndexAddress),
-    Lt(IndexAddress),
-    WantAll(IndexAddress),
+    Equal(Key),
+    Between(Key, Key),
+    Gt(Key),
+    Lt(Key),
+    WantAll(Key),
 }
 impl Query {
-    fn into_range(&self) -> Range {
+    fn into_range(self, tenant: Tenant) -> SResult<Range> {
+        match self {
+            Query::Equal(Key {
+                tenant: _,
+                table,
+                purpose,
+                row: _,
+            }) => {
+                if let Purpose::Index(id, value) = purpose {
+                    let from = Key::new_index(tenant, table, id, value.clone(), Uuid::nil());
+                    let to = Key::new_index(tenant, table, id, value, Uuid::max());
+                    Ok(Range(from, to))
+                } else {
+                    Err(ExothermError::IndexKeyError)
+                }
+            }
+            Query::Between(key, key1) => {
+                if let (
+                    Key {
+                        purpose: Purpose::Index(id, value1),
+                        tenant: _,
+                        table,
+                        row: _,
+                    },
+                    Key {
+                        purpose: Purpose::Index(id1, value2),
+                        tenant: _,
+                        table: _,
+                        row: _,
+                    },
+                ) = (key, key1)
+                {
+                    if id != id1 {
+                        return Err(ExothermError::UnequalColumns);
+                    }
+                    let from = Key::new_index(tenant, table, id, value1, Uuid::nil());
+                    let to = Key::new_index(tenant, table, id, value2, Uuid::max());
+                    Ok(Range(from, to))
+                } else {
+                    Err(ExothermError::IndexKeyError)
+                }
+            }
+            Query::Gt(Key {
+                tenant: _,
+                table,
+                purpose,
+                row: _,
+            }) => {
+                if let Purpose::Index(id, value) = purpose {
+                    let (_, max) = value.bounds();
+                    let from = Key::new_index(tenant, table, id, value, Uuid::nil());
+                    let to = Key::new_index(tenant, table, id, max, Uuid::max());
+                    Ok(Range(from, to))
+                } else {
+                    Err(ExothermError::IndexKeyError)
+                }
+            }
+            Query::Lt(Key {
+                tenant: _,
+                table,
+                purpose,
+                row: _,
+            }) => {
+                if let Purpose::Index(id, value) = purpose {
+                    let (min, _) = value.bounds();
+                    let from = Key::new_index(tenant, table, id, min, Uuid::nil());
+                    let to = Key::new_index(tenant, table, id, value, Uuid::max());
+                    Ok(Range(from, to))
+                } else {
+                    Err(ExothermError::IndexKeyError)
+                }
+            }
+            Query::WantAll(Key {
+                tenant: _,
+                table,
+                purpose,
+                row: _,
+            }) => {
+                if let Purpose::Index(id, value) = purpose {
+                    let (min, max) = value.bounds();
+                    let from = Key::new_index(tenant, table, id, min, Uuid::nil());
+                    let to = Key::new_index(tenant, table, id, max, Uuid::max());
+                    Ok(Range(from, to))
+                } else {
+                    Err(ExothermError::IndexKeyError)
+                }
+            }
+        }
+        //todo!()
+    }
+    /*fn into_range(&self, tenant: Tenant) -> Range {
         match self {
             Query::Equal(index_address) => {
                 let IndexAddress {
@@ -116,10 +211,10 @@ impl Query {
                 Range(from, to)
             }
         }
-    }
+    }*/
 }
 
-pub struct Range(IndexAddress, IndexAddress);
+pub struct Range(Key, Key);
 
 #[allow(unused)]
 #[derive(Debug)]
@@ -130,15 +225,13 @@ pub struct PageResult<'a> {
 }
 
 impl STransaction {
-    fn tenant(&self) -> Vec<u8> {
-        self.tenant.as_bytes().to_vec()
-    }
     pub async fn clear_value<T: RecordStruct<Decoded = T>>(
         &self,
         pk: Uuid,
     ) -> Result<bool, FdbBindingError> {
-        let mut key = self.tenant();
-        T::get_corpus_key(&mut key, pk);
+        let key = T::corpus_key(self.tenant, pk)
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
         //println!("GET: {:?}", key);
         if let Some(value) = &self.trx.get(&key, false).await? {
             //println!("GET VALUE {:?}", value.to_vec());
@@ -146,9 +239,9 @@ impl STransaction {
                 T::decode(&value).map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
             let indices = d.indices(pk);
             for index in indices {
-                self.clear_index(index);
+                self.clear_index(index)?;
             }
-            self.clear_corpus(pk, &d);
+            self.clear_corpus(pk, &d)?;
             Ok(true)
         } else {
             Ok(false)
@@ -158,8 +251,9 @@ impl STransaction {
         &self,
         pk: Uuid,
     ) -> Result<Option<T>, FdbBindingError> {
-        let mut key = self.tenant();
-        T::get_corpus_key(&mut key, pk);
+        let key = T::corpus_key(self.tenant, pk)
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
         //println!("GET: {:?}", key);
         if let Some(value) = &self.trx.get(&key, false).await? {
             //println!("GET VALUE {:?}", value.to_vec());
@@ -172,49 +266,53 @@ impl STransaction {
     }
     pub async fn put_value(
         &self,
-        //trx: &foundationdb::Transaction,
         record: &impl RecordStruct,
         pk: Uuid,
     ) -> Result<(), FdbBindingError> {
         let new_indices = record.indices(pk);
         for index in new_indices {
-            self.set_index(index, pk);
+            self.set_index(index, pk)?
         }
         self.set_corpus(pk, record)?;
         Ok(())
     }
-    fn calculate_index_key(&self, index: IndexAddress) -> Vec<u8> {
-        let mut key = Vec::<u8>::new();
-        key.push(84); //Tenant prefix
-        for b in self.tenant.as_bytes() {
-            key.push(*b);
-        }
-        for b in index.into_key() {
-            key.push(b);
-        }
-        key
+    fn generate_index_key(&self, index: Key) -> Result<Vec<u8>, FdbBindingError> {
+        let mut key = index;
+        key.tenant = self.tenant;
+        let key = key
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
+        Ok(key)
     }
-    fn set_index(&self, index: IndexAddress, pk: Uuid) {
+    fn set_index(&self, index: Key, pk: Uuid) -> Result<(), FdbBindingError> {
         let value = pk.as_bytes();
-        let key = self.calculate_index_key(index);
+        let key = self.generate_index_key(index)?;
         //println!("{}{:?}", self.tenant, index.into_key());
         println!("Index {}->{value:?}", String::from_utf8_lossy(&key));
         self.trx.set(&key, value);
+        Ok(())
     }
-    fn clear_index(&self, index: IndexAddress) {
-        let key = self.calculate_index_key(index);
+    fn clear_index(&self, index: Key) -> Result<(), FdbBindingError> {
+        let key = self.generate_index_key(index)?;
         //println!("{}{:?}", self.tenant, index.into_key());
         //println!("Index {}->{value:?}", String::from_utf8_lossy(&key));
         self.trx.clear(&key);
+        Ok(())
     }
     pub async fn query_index(
         &self,
         query: Query,
         reverse: bool,
     ) -> Result<PageResult, FdbBindingError> {
-        let Range(from, to) = query.into_range();
-        let from = self.calculate_index_key(from);
-        let to = self.calculate_index_key(to);
+        let Range(from, to) = query
+            .into_range(self.tenant)
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
+        let from = from
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
+        let to = to
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
         let mut opt = RangeOption::from((from, to));
         opt.mode = StreamingMode::Iterator;
         opt.reverse = reverse;
@@ -226,7 +324,6 @@ impl STransaction {
             used_bandwidth += kv.value().len();
             let record_id = Uuid::from_slice(kv.value())
                 .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
-            //value.value()
             ids.push(record_id);
         }
         let next = opt.next_range(&range);
@@ -237,20 +334,23 @@ impl STransaction {
         };
         Ok(page)
     }
-    fn corpus_key(&self, pk: Uuid, record: &impl RecordStruct) -> Vec<u8> {
-        let mut crp_key = self.tenant();
-        record.append_corpus_key(&mut crp_key, pk);
-        crp_key
-    }
-    fn clear_corpus(&self, pk: Uuid, record: &impl RecordStruct) {
-        let crp_key = self.corpus_key(pk, record);
+    fn clear_corpus(&self, pk: Uuid, record: &impl RecordStruct) -> Result<(), FdbBindingError> {
+        let crp_key = record
+            .get_corpus_key(self.tenant, pk)
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
+        //let crp_key = self.corpus_key(pk, record);
         self.trx.clear(&crp_key);
+        Ok(())
     }
     fn set_corpus(&self, pk: Uuid, record: &impl RecordStruct) -> Result<(), FdbBindingError> {
         let crp_value: rkyv::util::AlignedVec<16> = record
             .serialize()
             .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
-        let crp_key = self.corpus_key(pk, record);
+        let crp_key = record
+            .get_corpus_key(self.tenant, pk)
+            .generate()
+            .map_err(|e| FdbBindingError::new_custom_error(Box::new(e)))?;
         self.trx.set(&crp_key, &crp_value);
         Ok(())
     }

@@ -5,12 +5,20 @@ use crate::{
     error::{ConvertError, SResult},
 };
 
+use super::key::{Key, Tenant};
+
 pub trait RecordStruct {
     type Decoded;
-    fn append_corpus_key(&self, key: &mut Vec<u8>, pk: Uuid) {
+    /*fn append_corpus_key(&self, key: &mut Vec<u8>, pk: Uuid) {
         Self::get_corpus_key(key, pk);
+    }*/
+    fn corpus_key(tenant: Tenant, pk: Uuid) -> Key {
+        Key::new_row(tenant, Self::name(), pk)
     }
-    fn get_corpus_key(key: &mut Vec<u8>, pk: Uuid) {
+    fn get_corpus_key(&self, tenant: Tenant, pk: Uuid) -> Key {
+        Key::new_row(tenant, Self::name(), pk)
+    }
+    /*fn get_corpus_key(key: &mut Vec<u8>, pk: Uuid) {
         key.push(67); //Corpus magic number
         for b in Self::name().as_bytes() {
             key.push(*b);
@@ -19,7 +27,7 @@ pub trait RecordStruct {
         for b in pk.as_bytes() {
             key.push(*b);
         }
-    }
+    }*/
     fn serialize(&self) -> Result<rkyv::util::AlignedVec, rkyv::rancor::Error> {
         let row = Row(self.corpus());
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&row)?;
@@ -27,7 +35,7 @@ pub trait RecordStruct {
     }
     fn name() -> &'static str;
     fn corpus(&self) -> Vec<DbValue>; //Result<rkyv::util::AlignedVec, rkyv::rancor::Error>;
-    fn indices(&self, uuid: uuid::Uuid) -> Vec<IndexAddress>; //Vec<(usize, crate::values_indices::IndexableValue)>;
+    fn indices(&self, uuid: uuid::Uuid) -> Vec<Key>; //Vec<(usize, crate::values_indices::IndexableValue)>;
     fn tname(&self) -> &'static str;
     fn deserialize(from: Vec<DbValue>) -> Result<Self::Decoded, ConvertError>;
     fn decode(from: &[u8]) -> SResult<Self::Decoded> {
@@ -123,15 +131,17 @@ macro_rules! record {
 
             $(
                 $(
-                    fn $index_name(row: uuid::Uuid, value: &$ty) -> $crate::database::record::IndexAddress{
+                    fn $index_name(row: uuid::Uuid, value: &$ty) -> $crate::database::key::Key{
                         use $crate::database::record::RecordStruct;
                         use $crate::database::values_indices::*;
-                        $crate::database::record::IndexAddress {
-                            table: Self::name(),
-                            row,
-                            idx: $field_num,
-                            value: value.index()
-                        }
+                        use $crate::database::key::*;
+                        $crate::database::key::Key::new_index(
+                            Tenant::Unset,
+                            Self::name(),
+                            $field_num,
+                            value.index(),
+                            row
+                        )
                     }
                 )?
             )*
@@ -150,7 +160,7 @@ macro_rules! record {
                 let padded = $crate::database::record::pad_indices(unpadded);
                 padded
             }
-            fn indices(&self, row: uuid::Uuid) ->  Vec<$crate::database::record::IndexAddress>//Vec<(usize, IndexableValue)>
+            fn indices(&self, row: uuid::Uuid) ->  Vec<$crate::database::key::Key>//Vec<(usize, IndexableValue)>
             {
                 vec![$(
                     $(

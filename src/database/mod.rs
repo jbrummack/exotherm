@@ -5,5 +5,6 @@ pub mod error;
 //pub mod index_repr;
 pub mod key;
 pub mod record;
+pub mod row;
 pub mod transaction;
 pub mod values_indices;

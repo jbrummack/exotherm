@@ -27,6 +27,10 @@ pub enum ExothermError {
     RowDecode(#[from] ConvertError),
     #[error("You need to set a tenant before being able to generate a key")]
     TenantError,
+    #[error("Cant set an index with a row key")]
+    IndexKeyError,
+    #[error("Cant set an index between different columns")]
+    UnequalColumns,
     //#[error("{0}")]
     //Lance(#[from] lancedb::Error),
 }

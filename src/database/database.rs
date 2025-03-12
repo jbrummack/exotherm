@@ -4,7 +4,7 @@ use foundationdb::FdbBindingError;
 use crate::{database::transaction::STransaction, error::SResult};
 
 pub struct Database {
-    tenant: &'static str,
+    tenant: Tenant,
     fdb: foundationdb::Database,
 }
 
@@ -15,6 +15,8 @@ pub struct Database {
 }*/
 
 use serde::{Deserialize, Serialize};
+
+use super::key::Tenant;
 
 //use super::error::DbError;
 
@@ -56,7 +58,7 @@ impl Database {
         Ok(value)
     }
 
-    pub async fn new(tenant: &'static str) -> SResult<Self> {
+    pub async fn new(tenant: Tenant) -> SResult<Self> {
         let db = Database {
             tenant,
             fdb: foundationdb::Database::default()?,
