@@ -25,6 +25,8 @@ pub enum ExothermError {
     Uuid(#[from] uuid::Error),
     #[error("{0}")]
     RowDecode(#[from] ConvertError),
+    #[error("You need to set a tenant before being able to generate a key")]
+    TenantError,
     //#[error("{0}")]
     //Lance(#[from] lancedb::Error),
 }
