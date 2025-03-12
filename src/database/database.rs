@@ -113,4 +113,26 @@ impl Database {
             .await?;
         Ok(result)
     }
+    pub async fn transact_with_tenant<F, Fut, T>(
+        &self,
+        tenant: Tenant,
+        closure: F,
+    ) -> Result<T, ExothermError>
+    where
+        F: Fn(STransaction) -> Fut,
+        Fut: Future<Output = Result<T, FdbBindingError>>,
+    {
+        let result = self
+            .fdb
+            .run(|trx, maybe_committed| async {
+                let st = STransaction {
+                    trx,
+                    maybe_commited: maybe_committed.into(),
+                    tenant,
+                };
+                closure(st).await
+            })
+            .await?;
+        Ok(result)
+    }
 }
