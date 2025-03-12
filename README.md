@@ -1,4 +1,4 @@
-<p align="left"><img src="logo2.png" alt="exotherm logo" height="120px"></p>
+<p align="left"><img src="assets/logo2.png" alt="exotherm logo" height="120px"></p>
 
 # ORM for KV Stores
 

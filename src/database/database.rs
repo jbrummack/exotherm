@@ -1,9 +1,10 @@
-use foundationdb::FdbBindingError;
+use foundationdb::{FdbBindingError, api::NetworkAutoStop};
 //use uuid::Uuid;
 
 use crate::{database::transaction::STransaction, error::SResult};
 
 pub struct Database {
+    _autodrop: NetworkAutoStop,
     tenant: Tenant,
     fdb: foundationdb::Database,
 }
@@ -52,19 +53,41 @@ pub struct Connection {
 
 #[allow(dead_code)]
 impl Database {
+    ///Get information about the Database
     pub async fn get_status(&self) -> SResult<FdbStatus> {
         let status = self.fdb.get_client_status().await?;
         let value: FdbStatus = serde_json::from_slice(&status)?;
         Ok(value)
     }
-
+    ///Boot foundationdb and create a database
     pub async fn new(tenant: Tenant) -> SResult<Self> {
         let db = Database {
+            _autodrop: unsafe { foundationdb::boot() },
             tenant,
             fdb: foundationdb::Database::default()?,
         };
         Ok(db)
     }
+    ///Start a transaction
+    ///
+    /// ```ignore
+    ///     let db = Database::new(database::key::Tenant::Named("testing")).await.unwrap();
+    ///     let id = Uuid::new_v4();
+    ///     let person = Person {
+    ///         name: String::from("NameNameNameNameNamevName"),
+    ///         password: String::from("TestTestTestTestTest"),
+    ///     };
+    ///
+    ///     db.transact(|transaction| {
+    ///         let person = &person;
+    ///         async move {
+    ///             transaction.put_value(person, id).await?;
+    ///             Ok(())
+    ///         }
+    ///     })
+    ///     .await.unwrap();
+    ///
+    /// ```
     pub async fn transact<F, Fut, T>(&self, closure: F) -> Result<T, FdbBindingError>
     where
         F: Fn(STransaction) -> Fut,
