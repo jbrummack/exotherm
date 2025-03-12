@@ -1,7 +1,10 @@
 use foundationdb::{FdbBindingError, api::NetworkAutoStop};
 //use uuid::Uuid;
 
-use crate::{database::transaction::STransaction, error::SResult};
+use crate::{
+    database::transaction::STransaction,
+    error::{ExothermError, SResult},
+};
 
 pub struct Database {
     _autodrop: NetworkAutoStop,
@@ -88,12 +91,13 @@ impl Database {
     ///     .await.unwrap();
     ///
     /// ```
-    pub async fn transact<F, Fut, T>(&self, closure: F) -> Result<T, FdbBindingError>
+    pub async fn transact<F, Fut, T>(&self, closure: F) -> Result<T, ExothermError>
     where
         F: Fn(STransaction) -> Fut,
         Fut: Future<Output = Result<T, FdbBindingError>>,
     {
-        self.fdb
+        let result = self
+            .fdb
             .run(|trx, maybe_committed| async {
                 let st = STransaction {
                     trx,
@@ -102,6 +106,7 @@ impl Database {
                 };
                 closure(st).await
             })
-            .await
+            .await?;
+        Ok(result)
     }
 }
