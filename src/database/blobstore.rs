@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::error::SResult;
 
-pub struct ShardedBlob(Vec<u8>);
+pub struct ShardedBlob(pub Vec<u8>);
 #[derive(Debug, rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
 pub struct BlobKey(String, Uuid);
 
