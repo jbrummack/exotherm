@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::{database::values_indices::DbValue, error::ConvertError};
 
 impl TryFrom<DbValue> for String {
@@ -36,6 +38,17 @@ impl TryFrom<DbValue> for bool {
     type Error = ConvertError;
     fn try_from(value: DbValue) -> Result<Self, Self::Error> {
         if let DbValue::Bool(value) = value {
+            Ok(value)
+        } else {
+            Err(ConvertError::CantConvert { from: value })
+        }
+    }
+}
+
+impl TryFrom<DbValue> for Uuid {
+    type Error = ConvertError;
+    fn try_from(value: DbValue) -> Result<Self, Self::Error> {
+        if let DbValue::Uuid(value) = value {
             Ok(value)
         } else {
             Err(ConvertError::CantConvert { from: value })
