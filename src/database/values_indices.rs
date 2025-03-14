@@ -1,5 +1,7 @@
 use std::i32;
 
+use uuid::Uuid;
+
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone)]
 pub enum DbValue {
     Bool(bool),
@@ -14,6 +16,7 @@ pub enum DbValue {
     EnumNumber(i32),
     Vector(Vec<f32>),
     Blob(Vec<u8>),
+    Uuid(Uuid),
     None,
 }
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone)]
@@ -44,6 +47,7 @@ pub enum IndexableValue {
     String(String),
     EnumNumber(i32),
     Vector(Vec<f32>),
+    Uuid(Uuid),
     //Blob(Vec<u8>),
     None,
 }
@@ -59,6 +63,7 @@ impl IndexableValue {
             IndexableValue::Float(_) => (Self::Float(f32::MIN), Self::Float(f32::MAX)),
             IndexableValue::Double(_) => (Self::Double(f64::MIN), Self::Double(f64::MAX)),
             IndexableValue::String(_) => (Self::UInt32(u32::MIN), Self::UInt32(u32::MAX)),
+            IndexableValue::Uuid(_) => (Self::Uuid(Uuid::nil()), Self::Uuid(Uuid::max())),
             //IndexableValue::EnumNumber(_) => (Self::None, Self::None),
             //IndexableValue::Vector(_) => (Self::None, Self::None),
             IndexableValue::None => (Self::None, Self::None),
@@ -107,6 +112,11 @@ impl IndexableValue {
                     key.push(b);
                 }
             }
+            IndexableValue::Uuid(uuid) => {
+                for b in uuid.as_bytes() {
+                    key.push(*b);
+                }
+            }
             IndexableValue::Double(double) => {
                 let mut bits = double.to_bits();
                 if bits & 0x8000_0000_0000_0000 != 0 {
@@ -144,47 +154,6 @@ where
     }
 }
 
-/*impl IndexableValue {
-    pub fn from_protobuf(message_value: prost_reflect::Value) -> Option<Self> {
-        match message_value {
-            prost_reflect::Value::Bool(val) => Some(Self::Bool(val)),
-            prost_reflect::Value::I32(val) => Some(Self::Int32(val)),
-            prost_reflect::Value::I64(val) => Some(Self::Int64(val)),
-            prost_reflect::Value::U32(val) => Some(Self::Uint32(val)),
-            prost_reflect::Value::U64(val) => Some(Self::Uint64(val)),
-            prost_reflect::Value::F32(val) => Some(Self::Float(val)),
-            prost_reflect::Value::F64(val) => Some(Self::Double(val)),
-            prost_reflect::Value::String(val) => Some(Self::String(val)),
-            prost_reflect::Value::EnumNumber(val) => Some(Self::Enum(val)),
-
-            prost_reflect::Value::List(values) => {
-                //let mut retval = None;
-                if let Some(prost_reflect::Value::F32(_)) = values.first() {
-                    let retval = Some(Self::Vector(
-                        values
-                            .into_iter()
-                            .flat_map(|scalar| scalar.as_f32())
-                            .collect(),
-                    ));
-                    return retval;
-                };
-                if let Some(prost_reflect::Value::F64(_)) = values.first() {
-                    let retval = Some(Self::Vector(
-                        values
-                            .into_iter()
-                            .flat_map(|scalar| scalar.as_f64().map(|s| s as f32))
-                            .collect(),
-                    ));
-                    return retval;
-                };
-                None
-            }
-
-            _ => None,
-        }
-    }
-}
-*/
 macro_rules! impl_db_value_encode {
     ($type:ty, $variant:ident) => {
         impl DbValueEncode for $type {
@@ -203,6 +172,7 @@ impl_db_value_encode!(f32, Float);
 impl_db_value_encode!(f64, Double);
 impl_db_value_encode!(bool, Bool);
 impl_db_value_encode!(Vec<u8>, Blob);
+impl_db_value_encode!(Uuid, Uuid);
 
 macro_rules! impl_index_extractable {
     ($type:ty, $variant:ident) => {
@@ -234,6 +204,7 @@ impl_index_extractable!(i32, Int32);
 impl_index_extractable!(i64, Int64);
 impl_index_extractable!(f32, Float);
 impl_index_extractable!(f64, Double);
+impl_index_extractable!(Uuid, Uuid);
 
 /*impl IndexExtractable for VectorI8 {}
 impl IndexExtractable for VectorF32 {}
