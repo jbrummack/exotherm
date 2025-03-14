@@ -39,6 +39,6 @@ pub enum ExothermError {
 
 #[derive(Debug, Error)]
 pub enum ConvertError {
-    #[error("CantConvert from {from:?} to {to:?}")]
+    #[error("CantConvert from {from:?}")]
     CantConvert { from: DbValue },
 }
