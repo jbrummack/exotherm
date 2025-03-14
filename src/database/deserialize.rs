@@ -21,6 +21,17 @@ impl TryFrom<DbValue> for Vec<u8> {
         }
     }
 }
+
+impl TryFrom<DbValue> for Vec<f32> {
+    type Error = ConvertError;
+    fn try_from(value: DbValue) -> Result<Self, Self::Error> {
+        if let DbValue::Vector(value) = value {
+            Ok(value)
+        } else {
+            Err(ConvertError::CantConvert { from: value })
+        }
+    }
+}
 impl TryFrom<DbValue> for bool {
     type Error = ConvertError;
     fn try_from(value: DbValue) -> Result<Self, Self::Error> {
