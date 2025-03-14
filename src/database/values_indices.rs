@@ -173,6 +173,7 @@ impl_db_value_encode!(f64, Double);
 impl_db_value_encode!(bool, Bool);
 impl_db_value_encode!(Vec<u8>, Blob);
 impl_db_value_encode!(Uuid, Uuid);
+impl_db_value_encode!(Vec<f32>, Vector);
 
 macro_rules! impl_index_extractable {
     ($type:ty, $variant:ident) => {
