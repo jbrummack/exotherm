@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::database::values_indices::DbValue;
+
 pub type SResult<T> = Result<T, ExothermError>;
 #[allow(unused)]
 #[derive(Debug, Error)]
@@ -37,6 +39,6 @@ pub enum ExothermError {
 
 #[derive(Debug, Error)]
 pub enum ConvertError {
-    #[error("CantConvert")]
-    CantConvert,
+    #[error("CantConvert from {from:?} to {to:?}")]
+    CantConvert { from: DbValue },
 }
